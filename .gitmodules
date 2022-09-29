@@ -1,0 +1,3 @@
+[submodule "max-generalized-auc"]
+	path = max-generalized-auc
+	url = https://github.com/phase/max-generalized-auc
