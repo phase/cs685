@@ -2,16 +2,17 @@
 #include <algorithm>
 #include <vector>
 #include <set>
+#include <cmath>
 
-typedef struct Line {
+struct Line {
     double slope;
     double intercept;
-} Line;
+};
 
-typedef struct Point {
+struct Point {
     double x;
     double y;
-} Point;
+};
 
 Point intersect(Line a, Line b) {
     double x = (b.intercept - a.intercept) / (a.slope - b.slope);
@@ -19,18 +20,22 @@ Point intersect(Line a, Line b) {
     return Point{x, y};
 }
 
-typedef struct IntersectionData {
+struct IntersectionData {
     Point point;
     int lineA;
     int lineB;
-} IntersectionData;
+};
 
 bool operator<(IntersectionData a, IntersectionData b) {
     return a.point.x < b.point.x;
 }
 
+bool isFinite(Point point) {
+    return std::isfinite(point.x) && std::isfinite(point.y);
+}
+
 bool compareIntersections(IntersectionData &a, IntersectionData &b) {
-    return a.point.x < b.point.x;
+    return a < b;
 }
 
 std::vector<IntersectionData> findIntersections(std::vector<Line> lines) {
@@ -49,7 +54,9 @@ std::vector<IntersectionData> findIntersections(std::vector<Line> lines) {
 }
 
 void test(
-        std::vector<Line> lines
+        const std::vector<Line> &lines,
+        const std::vector<int> &deltaFp,
+        const std::vector<int> &deltaFn
 ) {
 
     // Q is a list of indices of lines
@@ -60,6 +67,12 @@ void test(
         Q.push_back(i);
     }
 
+    std::vector<long> FP;
+    FP.reserve(lines.size());
+
+    std::vector<long> FN;
+    FN.reserve(lines.size());
+
     std::multiset<IntersectionData> intersections;
     // start by queueing intersections of every line and the line after it
     for (int a = 0; a < lines.size() - 1; a++) {
@@ -68,6 +81,7 @@ void test(
     }
 
     while (!intersections.empty()) {
+        // TODO: handle multiple intersections with the same x coordinate at once
         auto intersection = intersections.begin();
         // swap the indices of the lines that make this intersection point
         long lineIndexA = distance(Q.begin(), find(Q.begin(), Q.end(), intersection->lineA));
@@ -81,21 +95,36 @@ void test(
         long higherLineIndex = lineIndexA + diff;
         long lowerLineIndex = lineIndexB - diff;
 
+        // if A > B: ((∆FP of A) * 1) − ((∆FP of B) * 1)
+        // if A < B: ((∆FP of A) * -1) − ((∆FP of B) * -1)
+        long deltaDeltaFp = (deltaFp[Q[lineIndexA]] * diff) - (deltaFp[Q[lineIndexB]] * diff);
+        long deltaDeltaFn = (deltaFn[Q[lineIndexA]] * diff) - (deltaFn[Q[lineIndexB]] * diff);
+
+        // update FP & FN
+        auto updateIndex = std::max(lineIndexA, lineIndexB);
+        FP.insert(FP.begin() + updateIndex, deltaDeltaFp);
+        FN.insert(FN.begin() + updateIndex, deltaDeltaFn);
+
         // create new intersections
         // "top" will actually be on top iff lineIndexA is after lineIndexB
         Point topIntersectionPoint = intersect(lines[Q[higherLineIndex]], lines[Q[lineIndexA]]);
         Point bottomIntersectionPoint = intersect(lines[Q[lowerLineIndex]], lines[Q[lineIndexB]]);
 
-        IntersectionData topIntersection = IntersectionData{
-                topIntersectionPoint, Q[higherLineIndex], Q[lineIndexA]
-        };
-        IntersectionData bottomIntersection = IntersectionData{
-                bottomIntersectionPoint, Q[lowerLineIndex], Q[lineIndexB]
-        };
-
         // queue these in the multiset
-        intersections.insert(topIntersection);
-        intersections.insert(bottomIntersection);
+        // intersection points with infinite values aren't real intersections
+        if (isFinite(topIntersectionPoint)) {
+            auto topIntersection = IntersectionData{
+                    topIntersectionPoint, Q[higherLineIndex], Q[lineIndexA]
+            };
+            intersections.insert(topIntersection);
+        }
+
+        if (isFinite(bottomIntersectionPoint)) {
+            auto bottomIntersection = IntersectionData{
+                    bottomIntersectionPoint, Q[lowerLineIndex], Q[lineIndexB]
+            };
+            intersections.insert(bottomIntersection);
+        }
     }
 }
 
