@@ -22,9 +22,14 @@ Point intersect(Line a, Line b) {
 
 struct IntersectionData {
     Point point;
-    int lineA;
-    int lineB;
+    // "low" line is the line below the other before the intersection point
+    int lineIndexLowBeforeIntercept;
+    // "high" line is the line above the other after the intersection point
+    int lineIndexHighBeforeIntercept;
 };
+
+void queueIntersection(const std::vector<int> &sortedIndices, std::multiset<IntersectionData> &intersections,
+                       long lowLineIndex, long highLineIndex, Point &intersectionPoint);
 
 bool operator<(IntersectionData a, IntersectionData b) {
     return a.point.x < b.point.x;
@@ -38,6 +43,7 @@ bool compareIntersections(IntersectionData &a, IntersectionData &b) {
     return a < b;
 }
 
+// test function, not used in algorithm below
 std::vector<IntersectionData> findIntersections(std::vector<Line> lines) {
     std::vector<IntersectionData> intersections;
     for (int a = 0; a < lines.size(); a++) {
@@ -56,15 +62,15 @@ std::vector<IntersectionData> findIntersections(std::vector<Line> lines) {
 void test(
         const std::vector<Line> &lines,
         const std::vector<int> &deltaFp,
-        const std::vector<int> &deltaFn
+        const std::vector<int> &deltaFn,
+        long maxIterations
 ) {
-
-    // Q is a list of indices of lines
-    // Q is updated as we move across the X axis, passing intersection points changes the indices in Q
-    std::vector<int> Q;
-    Q.reserve(lines.size());
+    // a list of indices of lines
+    // this is updated as we move across the X axis, passing intersection points changes the indices
+    std::vector<int> sortedIndices;
+    sortedIndices.reserve(lines.size());
     for (int i = 0; i < lines.size(); i++) {
-        Q.push_back(i);
+        sortedIndices.push_back(i);
     }
 
     std::vector<long> FP;
@@ -77,54 +83,71 @@ void test(
     // start by queueing intersections of every line and the line after it
     for (int a = 0; a < lines.size() - 1; a++) {
         Point point = intersect(lines[a], lines[a + 1]);
-        intersections.insert(IntersectionData{point, a, a + 1});
+        // parallel lines will be infinite
+        if (isFinite(point)) {
+            intersections.insert(IntersectionData{point, a, a + 1});
+        }
     }
 
-    while (!intersections.empty()) {
+    long iterations = 0;
+    while (!intersections.empty() && iterations++ < maxIterations) {
         // TODO: handle multiple intersections with the same x coordinate at once
         auto intersection = intersections.begin();
         // swap the indices of the lines that make this intersection point
-        long lineIndexA = distance(Q.begin(), find(Q.begin(), Q.end(), intersection->lineA));
-        long lineIndexB = distance(Q.begin(), find(Q.begin(), Q.end(), intersection->lineB));
-        std::swap(Q[lineIndexA], Q[lineIndexB]);
+        long lineIndexHighAfterIntercept = distance(
+                sortedIndices.begin(),
+                find(sortedIndices.begin(), sortedIndices.end(), intersection->lineIndexLowBeforeIntercept)
+        );
+        long lineIndexLowAfterIntercept = distance(
+                sortedIndices.begin(),
+                find(sortedIndices.begin(), sortedIndices.end(), intersection->lineIndexHighBeforeIntercept)
+        );
+        std::swap(sortedIndices[lineIndexHighAfterIntercept], sortedIndices[lineIndexLowAfterIntercept]);
 
-        // will be 1 if lineIndexA is after lineIndexB
-        // will be -1 if lineIndexA is before lineIndexB
-        long diff = lineIndexA - lineIndexB;
-        // indices of the lines we want to find intersections for
-        long higherLineIndex = lineIndexA + diff;
-        long lowerLineIndex = lineIndexB - diff;
+        // indices of the next lines we want to find intersections for
+        long higherLineIndex = lineIndexHighAfterIntercept + 1;
+        long lowerLineIndex = lineIndexLowAfterIntercept - 1;
 
-        // if A > B: ((∆FP of A) * 1) − ((∆FP of B) * 1)
-        // if A < B: ((∆FP of A) * -1) − ((∆FP of B) * -1)
-        long deltaDeltaFp = (deltaFp[Q[lineIndexA]] * diff) - (deltaFp[Q[lineIndexB]] * diff);
-        long deltaDeltaFn = (deltaFn[Q[lineIndexA]] * diff) - (deltaFn[Q[lineIndexB]] * diff);
+        // (∆FP of top line) - (∆FP of bottom line)
+        long deltaDeltaFp = deltaFp[sortedIndices[lineIndexHighAfterIntercept]] -
+                            deltaFp[sortedIndices[lineIndexLowAfterIntercept]];
+        long deltaDeltaFn = deltaFn[sortedIndices[lineIndexHighAfterIntercept]] -
+                            deltaFn[sortedIndices[lineIndexLowAfterIntercept]];
 
         // update FP & FN
-        auto updateIndex = std::max(lineIndexA, lineIndexB);
-        FP.insert(FP.begin() + updateIndex, deltaDeltaFp);
-        FN.insert(FN.begin() + updateIndex, deltaDeltaFn);
+        FP.insert(FP.begin() + lineIndexHighAfterIntercept, deltaDeltaFp);
+        FN.insert(FN.begin() + lineIndexHighAfterIntercept, deltaDeltaFn);
 
         // create new intersections
-        // "top" will actually be on top iff lineIndexA is after lineIndexB
-        Point topIntersectionPoint = intersect(lines[Q[higherLineIndex]], lines[Q[lineIndexA]]);
-        Point bottomIntersectionPoint = intersect(lines[Q[lowerLineIndex]], lines[Q[lineIndexB]]);
+        Point topIntersectionPoint = intersect(
+                lines[sortedIndices[higherLineIndex]],
+                lines[sortedIndices[lineIndexHighAfterIntercept]]
+        );
+        Point bottomIntersectionPoint = intersect(
+                lines[sortedIndices[lowerLineIndex]],
+                lines[sortedIndices[lineIndexLowAfterIntercept]]
+        );
 
         // queue these in the multiset
-        // intersection points with infinite values aren't real intersections
-        if (isFinite(topIntersectionPoint)) {
-            auto topIntersection = IntersectionData{
-                    topIntersectionPoint, Q[higherLineIndex], Q[lineIndexA]
-            };
-            intersections.insert(topIntersection);
-        }
+        // this creates an intersection between "lineIndexHighAfterIntercept" and "higherLineIndex"
+        // "lineIndexHighAfterIntercept" will now be the index of the low line before this new intersection point
+        queueIntersection(sortedIndices, intersections,
+                          lineIndexHighAfterIntercept, higherLineIndex,
+                          topIntersectionPoint);
+        queueIntersection(sortedIndices, intersections,
+                          lowerLineIndex, lineIndexLowAfterIntercept,
+                          bottomIntersectionPoint);
+    }
+}
 
-        if (isFinite(bottomIntersectionPoint)) {
-            auto bottomIntersection = IntersectionData{
-                    bottomIntersectionPoint, Q[lowerLineIndex], Q[lineIndexB]
-            };
-            intersections.insert(bottomIntersection);
-        }
+void queueIntersection(const std::vector<int> &sortedIndices, std::multiset<IntersectionData> &intersections,
+                       long lowLineIndex, long highLineIndex, Point &intersectionPoint) {
+    // intersection points with infinite values aren't real intersections
+    if (isFinite(intersectionPoint)) {
+        auto intersection = IntersectionData{
+                intersectionPoint, sortedIndices[lowLineIndex], sortedIndices[highLineIndex]
+        };
+        intersections.insert(intersection);
     }
 }
 
