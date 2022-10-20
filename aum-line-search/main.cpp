@@ -81,7 +81,7 @@ struct CheckedLines {
 };
 
 bool operator==(CheckedLines a, CheckedLines b) {
-    return a.low == b.low && a.high == b.high;
+    return (a.low == b.low && a.high == b.high) || (a.high == b.low && a.low == b.high);
 }
 
 namespace std {
@@ -105,18 +105,20 @@ void queueIntersection(
             lines[lowLine],
             lines[highLine]
     );
+
+    cout << "checking lines " << lowLine << " & " << highLine << ": " << lines[lowLine].intercept << " & " << lines[highLine].intercept << endl;
+
+    cout << " intersectionPoint.x = " << intersectionPoint.x << endl;
+    cout << " intersectionPoint.y = " << intersectionPoint.y << endl;
+
     // intersection points with infinite values aren't real intersections
-    if (isFinite(intersectionPoint)) {
+    if (isFinite(intersectionPoint) && intersectionPoint.x >= 0) {
         auto intersection = IntersectionData{
                 intersectionPoint, lowLine, highLine
         };
         if (checkedIntersections.find(CheckedLines{.low = lowLine, .high = highLine}) != checkedIntersections.end()) {
+            cout << " skipping " << lowLine << " " << highLine << endl;
             return;
-        } else {
-            cout << "already checkedIntersections" << endl;
-            for (const auto &item : checkedIntersections) {
-                cout << "  - " << item.low << " " << item.high << endl;
-            }
         }
 
         cout << "queueing intersection point " << intersection.point.x << " " << intersection.point.y << " "
@@ -158,8 +160,7 @@ void lineSearch(
     for (int a = 0; a < lineCount - 1; a++) {
         Point point = intersect(lines[a], lines[a + 1]);
         // parallel lines will be infinite
-        if (isFinite(point)) {
-            cout << "starting with intersection point " << point.x << " " << point.y << endl;
+        if (isFinite(point) && point.x >= 0) {
             int lineIndexLowBeforeIntercept;
             int lineIndexHighBeforeIntercept;
             if (lines[a].intercept < lines[a + 1].intercept) {
@@ -171,6 +172,7 @@ void lineSearch(
                 lineIndexLowBeforeIntercept = a + 1;
                 lineIndexHighBeforeIntercept = a;
             }
+            cout << "starting with intersection point: high line=" << lineIndexHighBeforeIntercept << " low line=" << lineIndexLowBeforeIntercept << " x=" << point.x << " y=" << point.y << endl;
             intersections.insert(IntersectionData{point, lineIndexLowBeforeIntercept, lineIndexHighBeforeIntercept});
             checkedIntersections.insert(
                     CheckedLines{.low = lineIndexHighBeforeIntercept, .high = lineIndexLowBeforeIntercept});
@@ -184,11 +186,11 @@ void lineSearch(
         cout << "using intersection point " << intersection->point.x << " " << intersection->point.y << " "
              << intersection->lineHighBeforeIntercept << " " << intersection->lineLowBeforeIntercept << endl;
         // swap the indices of the lines that make this intersection point
-        int lineIndexHighAfterIntercept = (int) distance(
+        int lineIndexLowAfterIntercept = (int) distance(
                 sortedIndices.begin(),
                 find(sortedIndices.begin(), sortedIndices.end(), intersection->lineLowBeforeIntercept)
         );
-        int lineIndexLowAfterIntercept = (int) distance(
+        int lineIndexHighAfterIntercept = (int) distance(
                 sortedIndices.begin(),
                 find(sortedIndices.begin(), sortedIndices.end(), intersection->lineHighBeforeIntercept)
         );
@@ -200,8 +202,10 @@ void lineSearch(
         cout << endl;
 
         // indices of the next lines we want to find intersections for
-        int higherLineIndex = intersection->lineHighBeforeIntercept - 1;
-        int lowerLineIndex = intersection->lineLowBeforeIntercept + 1;
+        //int higherLineIndex = intersection->lineHighBeforeIntercept - 1;
+        //int lowerLineIndex = intersection->lineLowBeforeIntercept + 1;
+        int higherLineIndex = lineIndexHighAfterIntercept - 1;
+        int lowerLineIndex = lineIndexLowAfterIntercept + 1;
 
         cout << " 0higherLineIndex: " << higherLineIndex << " (line " << sortedIndices[higherLineIndex] << ")" << endl;
         cout << " 1lineHighAfterIntercept: " << lineIndexHighAfterIntercept << " (line "
@@ -217,8 +221,8 @@ void lineSearch(
                             deltaFn[sortedIndices[lineIndexLowAfterIntercept]];
 
         // update FP & FN
-        FP[lineIndexHighAfterIntercept] = deltaDeltaFp;
-        FN[lineIndexHighAfterIntercept] = deltaDeltaFn;
+        FP[iterations] = deltaDeltaFp;
+        FN[iterations] = deltaDeltaFn;
 
         checkedIntersections.insert(CheckedLines{.low = intersection->lineLowBeforeIntercept, .high = intersection->lineHighBeforeIntercept});
         intersections.erase(intersection);
@@ -229,11 +233,11 @@ void lineSearch(
         // "lineIndexHighAfterIntercept" will now be the index of the low line before this new intersection point
         if (higherLineIndex > 0) {
             queueIntersection(lines, intersections, checkedIntersections,
-                              lineIndexHighAfterIntercept, sortedIndices[higherLineIndex]);
+                              intersection->lineLowBeforeIntercept, sortedIndices[higherLineIndex]);
         }
         if (lowerLineIndex < lineCount) {
             queueIntersection(lines, intersections, checkedIntersections,
-                              lineIndexLowAfterIntercept, sortedIndices[lowerLineIndex]);
+                              sortedIndices[lowerLineIndex], intersection->lineHighBeforeIntercept);
         }
     }
 }
@@ -255,16 +259,45 @@ int main0() {
     return 0;
 }
 
-int main() {
+int main1() {
     Line lines[] = {
             {1, 0},
             {2, -1},
             {3, -6},
     };
-    int deltaFp[] = {0, 0, 0, 0, 0, 0, 0};
-    int deltaFn[] = {0, 0, 0, 0, 0, 0, 0};
-    long FP[6];
-    long FN[6];
+    int deltaFp[] = {3, -2, 1};
+    int deltaFn[] = {2, 2, -1};
+    long FP[3];
+    long FN[3];
     lineSearch(lines, 3, deltaFp, deltaFn, FP, FN, 20);
+
+    cout << "FP: ";
+    for (auto i: FP) { cout << i << " "; }
+    cout << endl;
+    cout << "FN: ";
+    for (auto i: FN) { cout << i << " "; }
+    cout << endl;
+    return 0;
+}
+
+int main() {
+    Line lines[] = {
+            {-1, 2},
+            {0.5, 1},
+            {2, -2},
+            {3, -5}
+    };
+    int deltaFp[] = {3, -2, 1, 0};
+    int deltaFn[] = {2, 2, -1, 0};
+    long FP[3];
+    long FN[3];
+    lineSearch(lines, 4, deltaFp, deltaFn, FP, FN, 20);
+
+    cout << "FP: ";
+    for (auto i: FP) { cout << i << " "; }
+    cout << endl;
+    cout << "FN: ";
+    for (auto i: FN) { cout << i << " "; }
+    cout << endl;
     return 0;
 }
