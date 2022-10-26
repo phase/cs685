@@ -76,19 +76,11 @@ vector<IntersectionData> findIntersections(vector<Line> lines) {
     return intersections;
 }
 
-struct CheckedLines {
-    int low, high;
-};
-
-bool operator==(CheckedLines a, CheckedLines b) {
-    return (a.low == b.low && a.high == b.high) || (a.high == b.low && a.low == b.high);
-}
-
 namespace std {
     template<>
-    struct hash<CheckedLines> {
-        size_t operator()(const CheckedLines &data) const noexcept {
-            return ((uint64_t) data.low) << 32 | ((uint64_t) data.high);
+    struct hash<Point> {
+        size_t operator()(const Point &point) const noexcept {
+            return ((uint64_t) point.x) << 32 | ((uint64_t) point.y);
         }
     };
 }
@@ -97,7 +89,7 @@ namespace std {
 void queueIntersection(
         const Line *lines,
         multiset<IntersectionData> &intersections,
-        unordered_set<CheckedLines> &checkedIntersections,
+        unordered_set<Point> &checkedIntersections,
         int lowLine,
         int highLine
 ) {
@@ -116,7 +108,7 @@ void queueIntersection(
         auto intersection = IntersectionData{
                 intersectionPoint, lowLine, highLine
         };
-        if (checkedIntersections.find(CheckedLines{.low = lowLine, .high = highLine}) != checkedIntersections.end()) {
+        if (checkedIntersections.find(intersectionPoint) != checkedIntersections.end()) {
             cout << " skipping " << lowLine << " " << highLine << endl;
             return;
         }
@@ -154,7 +146,7 @@ void lineSearch(
         sortedIndices.push_back(i);
     }
 
-    unordered_set<CheckedLines> checkedIntersections;
+    unordered_set<Point> checkedIntersections;
     multiset<IntersectionData> intersections;
     // start by queueing intersections of every line and the line after it
     for (int a = 0; a < lineCount - 1; a++) {
@@ -174,8 +166,7 @@ void lineSearch(
             }
             cout << "starting with intersection point: high line=" << lineIndexHighBeforeIntercept << " low line=" << lineIndexLowBeforeIntercept << " x=" << point.x << " y=" << point.y << endl;
             intersections.insert(IntersectionData{point, lineIndexLowBeforeIntercept, lineIndexHighBeforeIntercept});
-            checkedIntersections.insert(
-                    CheckedLines{.low = lineIndexHighBeforeIntercept, .high = lineIndexLowBeforeIntercept});
+            checkedIntersections.insert(point);
         }
     }
 
@@ -224,7 +215,7 @@ void lineSearch(
         FP[iterations] = deltaDeltaFp;
         FN[iterations] = deltaDeltaFn;
 
-        checkedIntersections.insert(CheckedLines{.low = intersection->lineLowBeforeIntercept, .high = intersection->lineHighBeforeIntercept});
+        checkedIntersections.insert(intersection->point);
         intersections.erase(intersection);
         cout << "Intersections: " << intersections.size() << endl;
 
@@ -242,7 +233,7 @@ void lineSearch(
     }
 }
 
-int main0() {
+int main() {
     Line lines[] = {
             {0, 3},
             {0, 2},
@@ -280,7 +271,7 @@ int main1() {
     return 0;
 }
 
-int main() {
+int main2() {
     Line lines[] = {
             {-1, 2},
             {0.5, 1},
