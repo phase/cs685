@@ -54,12 +54,6 @@ bool compareIntersections(IntersectionData &a, IntersectionData &b) {
     return a < b;
 }
 
-/// custom compare function for testing the equality of two IntersectionData structs
-/// to be used in sets
-bool intersectionDataSetEquality(const IntersectionData &a, const IntersectionData &b) {
-    return a < b;
-}
-
 // test function, not used in algorithm below
 vector<IntersectionData> findIntersections(vector<Line> lines) {
     vector<IntersectionData> intersections;
@@ -77,6 +71,7 @@ vector<IntersectionData> findIntersections(vector<Line> lines) {
 }
 
 namespace std {
+    // hash implementation for Point used in the multiset below
     template<>
     struct hash<Point> {
         size_t operator()(const Point &point) const noexcept {
@@ -98,18 +93,12 @@ void queueIntersection(
             lines[highLine]
     );
 
-    cout << "checking lines " << lowLine << " & " << highLine << ": " << lines[lowLine].intercept << " & " << lines[highLine].intercept << endl;
-
-    cout << " intersectionPoint.x = " << intersectionPoint.x << endl;
-    cout << " intersectionPoint.y = " << intersectionPoint.y << endl;
-
     // intersection points with infinite values aren't real intersections
     if (isFinite(intersectionPoint) && intersectionPoint.x >= 0) {
         auto intersection = IntersectionData{
                 intersectionPoint, lowLine, highLine
         };
         if (checkedIntersections.find(intersectionPoint) != checkedIntersections.end()) {
-            cout << " skipping " << lowLine << " " << highLine << endl;
             return;
         }
 
@@ -132,11 +121,11 @@ void queueIntersection(
 void lineSearch(
         const Line *lines,
         int lineCount,
-        const int *deltaFp,
-        const int *deltaFn,
-        long *FP,
-        long *FN,
-        long *M,
+        const double *deltaFp,
+        const double *deltaFn,
+        double *FP,
+        double *FN,
+        double *M,
         long maxIterations
 ) {
     // a list of indices of lines
@@ -171,6 +160,7 @@ void lineSearch(
         }
     }
 
+    double aumSlope = 0.0;
     long iterations = 0;
     while (!intersections.empty() && iterations++ < maxIterations) {
         // TODO: handle multiple intersections with the same x coordinate at once
@@ -205,17 +195,15 @@ void lineSearch(
         cout << " 3lowerLineIndex: " << lowerLineIndex << " (line " << sortedIndices[lowerLineIndex] << ")" << endl;
 
         // (∆FP of top line) - (∆FP of bottom line)
-        long deltaDeltaFp = deltaFp[sortedIndices[lineIndexHighAfterIntercept]] -
+        double deltaDeltaFp = deltaFp[sortedIndices[lineIndexHighAfterIntercept]] -
                             deltaFp[sortedIndices[lineIndexLowAfterIntercept]];
-        long deltaDeltaFn = deltaFn[sortedIndices[lineIndexHighAfterIntercept]] -
+        double deltaDeltaFn = deltaFn[sortedIndices[lineIndexHighAfterIntercept]] -
                             deltaFn[sortedIndices[lineIndexLowAfterIntercept]];
 
         // update FP & FN
         FP[iterations] = deltaDeltaFp;
         FN[iterations] = deltaDeltaFn;
         M[iterations] = min(deltaDeltaFn, deltaDeltaFp);
-
-        cout << "Intersections: " << intersections.size() << endl;
 
         // queue these in the multiset
         // this creates an intersection between "lineIndexHighAfterIntercept" and "higherLineIndex"
@@ -228,6 +216,10 @@ void lineSearch(
             queueIntersection(lines, intersections, checkedIntersections,
                               sortedIndices[lowerLineIndex], intersection->lineHighBeforeIntercept);
         }
+
+        // update aum slope
+        double slopeDiff = lines[intersection->lineHighBeforeIntercept].slope - lines[intersection->lineLowBeforeIntercept].slope;
+        aumSlope += (slopeDiff) * M[iterations]; // TODO this is wrong, figure out what each M value in the paper translates to
 
         checkedIntersections.insert(intersection->point);
         intersections.erase(intersection);
@@ -243,11 +235,11 @@ int main0() {
             {1, -2},
             {1, -3},
     };
-    int deltaFp[] = {0, 0, 0, 0, 0, 0, 0};
-    int deltaFn[] = {0, 0, 0, 0, 0, 0, 0};
-    long FP[6];
-    long FN[6];
-    long M[6];
+    double deltaFp[] = {0, 0, 0, 0, 0, 0, 0};
+    double deltaFn[] = {0, 0, 0, 0, 0, 0, 0};
+    double FP[6];
+    double FN[6];
+    double M[6];
     lineSearch(lines, 6, deltaFp, deltaFn, FP, FN, M, 10);
     return 0;
 }
@@ -258,11 +250,11 @@ int main() {
             {2, -1},
             {3, -6},
     };
-    int deltaFp[] = {3, -2, 1};
-    int deltaFn[] = {2, 2, -1};
-    long FP[3];
-    long FN[3];
-    long M[3];
+    double deltaFp[] = {3, -2, 1};
+    double deltaFn[] = {2, 2, -1};
+    double FP[3];
+    double FN[3];
+    double M[3];
     lineSearch(lines, 3, deltaFp, deltaFn, FP, FN, M, 20);
 
     cout << "FP: ";
@@ -281,11 +273,11 @@ int main2() {
             {2, -2},
             {3, -5}
     };
-    int deltaFp[] = {3, -2, 1, 0};
-    int deltaFn[] = {2, 2, -1, 0};
-    long FP[4];
-    long FN[4];
-    long M[4];
+    double deltaFp[] = {3, -2, 1, 0};
+    double deltaFn[] = {2, 2, -1, 0};
+    double FP[4];
+    double FN[4];
+    double M[4];
     lineSearch(lines, 4, deltaFp, deltaFn, FP, FN, M, 20);
 
     cout << "FP: ";
