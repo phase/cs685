@@ -136,6 +136,7 @@ void lineSearch(
         const int *deltaFn,
         long *FP,
         long *FN,
+        long *M,
         long maxIterations
 ) {
     // a list of indices of lines
@@ -193,8 +194,6 @@ void lineSearch(
         cout << endl;
 
         // indices of the next lines we want to find intersections for
-        //int higherLineIndex = intersection->lineHighBeforeIntercept - 1;
-        //int lowerLineIndex = intersection->lineLowBeforeIntercept + 1;
         int higherLineIndex = lineIndexHighAfterIntercept - 1;
         int lowerLineIndex = lineIndexLowAfterIntercept + 1;
 
@@ -214,15 +213,14 @@ void lineSearch(
         // update FP & FN
         FP[iterations] = deltaDeltaFp;
         FN[iterations] = deltaDeltaFn;
+        M[iterations] = min(deltaDeltaFn, deltaDeltaFp);
 
-        checkedIntersections.insert(intersection->point);
-        intersections.erase(intersection);
         cout << "Intersections: " << intersections.size() << endl;
 
         // queue these in the multiset
         // this creates an intersection between "lineIndexHighAfterIntercept" and "higherLineIndex"
         // "lineIndexHighAfterIntercept" will now be the index of the low line before this new intersection point
-        if (higherLineIndex > 0) {
+        if (higherLineIndex >= 0) {
             queueIntersection(lines, intersections, checkedIntersections,
                               intersection->lineLowBeforeIntercept, sortedIndices[higherLineIndex]);
         }
@@ -230,10 +228,13 @@ void lineSearch(
             queueIntersection(lines, intersections, checkedIntersections,
                               sortedIndices[lowerLineIndex], intersection->lineHighBeforeIntercept);
         }
+
+        checkedIntersections.insert(intersection->point);
+        intersections.erase(intersection);
     }
 }
 
-int main() {
+int main0() {
     Line lines[] = {
             {0, 3},
             {0, 2},
@@ -246,11 +247,12 @@ int main() {
     int deltaFn[] = {0, 0, 0, 0, 0, 0, 0};
     long FP[6];
     long FN[6];
-    lineSearch(lines, 6, deltaFp, deltaFn, FP, FN, 10);
+    long M[6];
+    lineSearch(lines, 6, deltaFp, deltaFn, FP, FN, M, 10);
     return 0;
 }
 
-int main1() {
+int main() {
     Line lines[] = {
             {1, 0},
             {2, -1},
@@ -260,7 +262,8 @@ int main1() {
     int deltaFn[] = {2, 2, -1};
     long FP[3];
     long FN[3];
-    lineSearch(lines, 3, deltaFp, deltaFn, FP, FN, 20);
+    long M[3];
+    lineSearch(lines, 3, deltaFp, deltaFn, FP, FN, M, 20);
 
     cout << "FP: ";
     for (auto i: FP) { cout << i << " "; }
@@ -280,9 +283,10 @@ int main2() {
     };
     int deltaFp[] = {3, -2, 1, 0};
     int deltaFn[] = {2, 2, -1, 0};
-    long FP[3];
-    long FN[3];
-    lineSearch(lines, 4, deltaFp, deltaFn, FP, FN, 20);
+    long FP[4];
+    long FN[4];
+    long M[4];
+    lineSearch(lines, 4, deltaFp, deltaFn, FP, FN, M, 20);
 
     cout << "FP: ";
     for (auto i: FP) { cout << i << " "; }
