@@ -13,7 +13,7 @@ struct Line {
 };
 
 struct Point {
-    double x;
+    double x; // step size
     double y;
 };
 
@@ -30,9 +30,9 @@ Point intersect(Line a, Line b) {
 struct IntersectionData {
     Point point;
     // "low" line is the line below the other before the intersection point
-    int lineLowBeforeIntercept;
+    int lineLowBeforeIntersect;
     // "high" line is the line above the other after the intersection point
-    int lineHighBeforeIntercept;
+    int lineHighBeforeIntersect;
 };
 
 bool operator<(IntersectionData a, IntersectionData b) {
@@ -41,8 +41,10 @@ bool operator<(IntersectionData a, IntersectionData b) {
 
 bool operator==(IntersectionData a, IntersectionData b) {
     return a.point == b.point && (
-            (a.lineHighBeforeIntercept == b.lineHighBeforeIntercept && a.lineLowBeforeIntercept == b.lineLowBeforeIntercept) ||
-            (a.lineHighBeforeIntercept == b.lineLowBeforeIntercept && a.lineLowBeforeIntercept == b.lineHighBeforeIntercept)
+            (a.lineHighBeforeIntersect == b.lineHighBeforeIntersect &&
+             a.lineLowBeforeIntersect == b.lineLowBeforeIntersect) ||
+            (a.lineHighBeforeIntersect == b.lineLowBeforeIntersect &&
+             a.lineLowBeforeIntersect == b.lineHighBeforeIntersect)
     );
 }
 
@@ -103,7 +105,7 @@ void queueIntersection(
         }
 
         cout << "queueing intersection point " << intersection.point.x << " " << intersection.point.y << " "
-             << intersection.lineHighBeforeIntercept << " " << intersection.lineLowBeforeIntercept << endl;
+             << intersection.lineHighBeforeIntersect << " " << intersection.lineLowBeforeIntersect << endl;
         intersections.insert(intersection);
     }
 }
@@ -126,14 +128,18 @@ void lineSearch(
         double *FP,
         double *FN,
         double *M,
-        long maxIterations
+        int maxIterations
 ) {
     // a list of indices of lines
     // this is updated as we move across the X axis, passing intersection points changes the indices
     vector<int> sortedIndices;
+    // map from line number to index of line
+    vector<int> backwardsIndices;
     sortedIndices.reserve(lineCount);
+    backwardsIndices.reserve(lineCount);
     for (int i = 0; i < lineCount; i++) {
         sortedIndices.push_back(i);
+        backwardsIndices.push_back(i);
     }
 
     unordered_set<Point> checkedIntersections;
@@ -143,83 +149,77 @@ void lineSearch(
         Point point = intersect(lines[a], lines[a + 1]);
         // parallel lines will be infinite
         if (isFinite(point) && point.x >= 0) {
-            int lineIndexLowBeforeIntercept;
-            int lineIndexHighBeforeIntercept;
+            int lineIndexLowBeforeIntersect;
+            int lineIndexHighBeforeIntersect;
             if (lines[a].intercept < lines[a + 1].intercept) {
                 // (a) is below (a + 1) before the intersection point
-                lineIndexLowBeforeIntercept = a;
-                lineIndexHighBeforeIntercept = a + 1;
+                lineIndexLowBeforeIntersect = a;
+                lineIndexHighBeforeIntersect = a + 1;
             } else {
                 // (a + 1) is below (a) before the intersection point
-                lineIndexLowBeforeIntercept = a + 1;
-                lineIndexHighBeforeIntercept = a;
+                lineIndexLowBeforeIntersect = a + 1;
+                lineIndexHighBeforeIntersect = a;
             }
-            cout << "starting with intersection point: high line=" << lineIndexHighBeforeIntercept << " low line=" << lineIndexLowBeforeIntercept << " x=" << point.x << " y=" << point.y << endl;
-            intersections.insert(IntersectionData{point, lineIndexLowBeforeIntercept, lineIndexHighBeforeIntercept});
+            cout << "starting with intersection point: high line=" << lineIndexHighBeforeIntersect << " low line=" << lineIndexLowBeforeIntersect << " x=" << point.x << " y=" << point.y << endl;
+            intersections.insert(IntersectionData{point, lineIndexLowBeforeIntersect, lineIndexHighBeforeIntersect});
             checkedIntersections.insert(point);
         }
     }
 
     double aumSlope = 0.0;
-    long iterations = 0;
+    int iterations = 0;
     while (!intersections.empty() && iterations++ < maxIterations) {
-        // TODO: handle multiple intersections with the same x coordinate at once
         auto intersection = intersections.begin();
         cout << "using intersection point " << intersection->point.x << " " << intersection->point.y << " "
-             << intersection->lineHighBeforeIntercept << " " << intersection->lineLowBeforeIntercept << endl;
-        // swap the indices of the lines that make this intersection point
-        int lineIndexLowAfterIntercept = (int) distance(
-                sortedIndices.begin(),
-                find(sortedIndices.begin(), sortedIndices.end(), intersection->lineLowBeforeIntercept)
-        );
-        int lineIndexHighAfterIntercept = (int) distance(
-                sortedIndices.begin(),
-                find(sortedIndices.begin(), sortedIndices.end(), intersection->lineHighBeforeIntercept)
-        );
-        swap(sortedIndices[lineIndexHighAfterIntercept], sortedIndices[lineIndexLowAfterIntercept]);
+             << intersection->lineHighBeforeIntersect << " " << intersection->lineLowBeforeIntersect << endl;
 
-        cout << " sorted indices: ";
-        for (auto i: sortedIndices)
-            cout << i << ' ';
-        cout << endl;
+        // swap the indices of the lines that make this intersection point
+        int lineIndexLowAfterIntersect = backwardsIndices[intersection->lineLowBeforeIntersect];
+        int lineIndexHighAfterIntersect = backwardsIndices[intersection->lineHighBeforeIntersect];
+        swap(backwardsIndices[intersection->lineLowBeforeIntersect], backwardsIndices[intersection->lineHighBeforeIntersect]);
+        swap(sortedIndices[lineIndexHighAfterIntersect], sortedIndices[lineIndexLowAfterIntersect]);
 
         // indices of the next lines we want to find intersections for
-        int higherLineIndex = lineIndexHighAfterIntercept - 1;
-        int lowerLineIndex = lineIndexLowAfterIntercept + 1;
+        int higherLineIndex = lineIndexHighAfterIntersect - 1;
+        int lowerLineIndex = lineIndexLowAfterIntersect + 1;
 
         cout << " 0higherLineIndex: " << higherLineIndex << " (line " << sortedIndices[higherLineIndex] << ")" << endl;
-        cout << " 1lineHighAfterIntercept: " << lineIndexHighAfterIntercept << " (line "
-             << intersection->lineLowBeforeIntercept << ")" << endl;
-        cout << " 2lineLowAfterIntercept: " << lineIndexLowAfterIntercept << " (line "
-             << intersection->lineHighBeforeIntercept << ")" << endl;
+        cout << " 1lineHighAfterIntersect: " << lineIndexHighAfterIntersect << " (line "
+             << intersection->lineLowBeforeIntersect << ")" << endl;
+        cout << " 2lineLowAfterIntersect: " << lineIndexLowAfterIntersect << " (line "
+             << intersection->lineHighBeforeIntersect << ")" << endl;
         cout << " 3lowerLineIndex: " << lowerLineIndex << " (line " << sortedIndices[lowerLineIndex] << ")" << endl;
 
         // (∆FP of top line) - (∆FP of bottom line)
-        double deltaDeltaFp = deltaFp[sortedIndices[lineIndexHighAfterIntercept]] -
-                            deltaFp[sortedIndices[lineIndexLowAfterIntercept]];
-        double deltaDeltaFn = deltaFn[sortedIndices[lineIndexHighAfterIntercept]] -
-                            deltaFn[sortedIndices[lineIndexLowAfterIntercept]];
+        double deltaDeltaFp = deltaFp[sortedIndices[lineIndexLowAfterIntersect]] -
+                              deltaFp[sortedIndices[lineIndexHighAfterIntersect]];
+        double deltaDeltaFn = deltaFn[sortedIndices[lineIndexLowAfterIntersect]] -
+                              deltaFn[sortedIndices[lineIndexHighAfterIntersect]];
+
+        // b ∈ {2, . . . , B} is the index of the function which is larger before intersection point
+        int b = intersection->lineHighBeforeIntersect;
 
         // update FP & FN
-        FP[iterations] = deltaDeltaFp;
-        FN[iterations] = deltaDeltaFn;
-        M[iterations] = min(deltaDeltaFn, deltaDeltaFp);
+        FP[b] += deltaDeltaFp;
+        FN[b] += deltaDeltaFn;
+        double minBeforeIntersection = M[b];
+        M[b] = min(FP[b], FN[b]);
 
         // queue these in the multiset
-        // this creates an intersection between "lineIndexHighAfterIntercept" and "higherLineIndex"
-        // "lineIndexHighAfterIntercept" will now be the index of the low line before this new intersection point
+        // this creates an intersection between "lineIndexHighAfterIntersect" and "higherLineIndex"
+        // "lineIndexHighAfterIntersect" will now be the index of the low line before this new intersection point
         if (higherLineIndex >= 0) {
             queueIntersection(lines, intersections, checkedIntersections,
-                              intersection->lineLowBeforeIntercept, sortedIndices[higherLineIndex]);
+                              intersection->lineLowBeforeIntersect, sortedIndices[higherLineIndex]);
         }
         if (lowerLineIndex < lineCount) {
             queueIntersection(lines, intersections, checkedIntersections,
-                              sortedIndices[lowerLineIndex], intersection->lineHighBeforeIntercept);
+                              sortedIndices[lowerLineIndex], intersection->lineHighBeforeIntersect);
         }
 
         // update aum slope
-        double slopeDiff = lines[intersection->lineHighBeforeIntercept].slope - lines[intersection->lineLowBeforeIntercept].slope;
-        aumSlope += (slopeDiff) * M[iterations]; // TODO this is wrong, figure out what each M value in the paper translates to
+        double slopeDiff = lines[intersection->lineHighBeforeIntersect].slope - lines[intersection->lineLowBeforeIntersect].slope;
+        aumSlope += (slopeDiff) * (M[b - 1] + M[b + 1] - M[b] - minBeforeIntersection);
 
         checkedIntersections.insert(intersection->point);
         intersections.erase(intersection);
@@ -237,9 +237,9 @@ int main0() {
     };
     double deltaFp[] = {0, 0, 0, 0, 0, 0, 0};
     double deltaFn[] = {0, 0, 0, 0, 0, 0, 0};
-    double FP[6];
-    double FN[6];
-    double M[6];
+    double FP[6] = {0};
+    double FN[6] = {0};
+    double M[6] = {0};
     lineSearch(lines, 6, deltaFp, deltaFn, FP, FN, M, 10);
     return 0;
 }
@@ -252,9 +252,9 @@ int main() {
     };
     double deltaFp[] = {3, -2, 1};
     double deltaFn[] = {2, 2, -1};
-    double FP[3];
-    double FN[3];
-    double M[3];
+    double FP[3] = {0};
+    double FN[3] = {0};
+    double M[3] = {0};
     lineSearch(lines, 3, deltaFp, deltaFn, FP, FN, M, 20);
 
     cout << "FP: ";
@@ -275,9 +275,9 @@ int main2() {
     };
     double deltaFp[] = {3, -2, 1, 0};
     double deltaFn[] = {2, 2, -1, 0};
-    double FP[4];
-    double FN[4];
-    double M[4];
+    double FP[4] = {0};
+    double FN[4] = {0};
+    double M[4] = {0};
     lineSearch(lines, 4, deltaFp, deltaFn, FP, FN, M, 20);
 
     cout << "FP: ";
