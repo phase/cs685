@@ -59,10 +59,11 @@ void lineSearch(
         int lineCount,
         const double *deltaFp,
         const double *deltaFn,
+        double initialAum,
+        int maxIterations,
         double *FP,
         double *FN,
         double *M,
-        int maxIterations,
         double *stepSizeVec,
         double *aumVec
 );

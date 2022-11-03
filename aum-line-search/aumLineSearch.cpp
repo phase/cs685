@@ -63,10 +63,11 @@ void lineSearch(
         int lineCount,
         const double *deltaFp,
         const double *deltaFn,
+        double initialAum,
+        int maxIterations,
         double *FP,
         double *FN,
         double *M,
-        int maxIterations,
         double *stepSizeVec,
         double *aumVec
 ) {
@@ -106,8 +107,26 @@ void lineSearch(
         }
     }
 
-    double intercept = 0; // TODO this should be AUM at step size 0
+    // AUM at step size 0
+    double intercept = initialAum;
+    aumVec[0] = intercept;
     double aumSlope = 0.0;
+    double lastStepSize = 0.0;
+
+    FN[lineCount - 1] = -deltaFn[lineCount - 1];
+    for (int b = lineCount - 2; b >= 1; b--) {
+        FN[b] = FN[b + 1] - deltaFn[b];
+    }
+
+    // build FP, FN, & M, and compute initial aum slope
+    for (int b = 1; b < lineCount; b++) {
+        double slopeDiff = lines[b].slope - lines[b - 1].slope;
+        FP[b] = FP[b - 1] + deltaFp[b - 1];
+        M[b] = min(FP[b], FN[b]);
+        aumSlope += slopeDiff * M[b];
+    }
+    double aum = initialAum;
+
     int iterations = 0;
     while (!intersections.empty() && iterations++ < maxIterations) {
         auto intersection = intersections.begin();
@@ -125,31 +144,12 @@ void lineSearch(
         int higherLineIndex = lineIndexHighAfterIntersect + 1;
         int lowerLineIndex = lineIndexLowAfterIntersect - 1;
 
-        cout << "sortedIndices = ";
-        for (int i : sortedIndices) {
-            cout << i << " ";
-        }
-        cout << endl;
-
-        cout << "backwardsIndices = ";
-        for (int i : backwardsIndices) {
-            cout << i << " ";
-        }
-        cout << endl;
-
-        cout << " 0higherLineIndex: " << higherLineIndex << " (line " << sortedIndices[higherLineIndex] << ")" << endl;
-        cout << " 1lineHighAfterIntersect: " << lineIndexHighAfterIntersect << " (line "
-             << intersection->lineLowBeforeIntersect << ")" << endl;
-        cout << " 2lineLowAfterIntersect: " << lineIndexLowAfterIntersect << " (line "
-             << intersection->lineHighBeforeIntersect << ")" << endl;
-        cout << " 3lowerLineIndex: " << lowerLineIndex << " (line " << sortedIndices[lowerLineIndex] << ")" << endl;
-
         // (∆FP of top line) - (∆FP of bottom line)
-        double deltaFpDiff = deltaFp[lineIndexHighAfterIntersect] - deltaFp[lineIndexLowAfterIntersect];
-        double deltaFnDiff = deltaFn[lineIndexHighAfterIntersect] - deltaFn[lineIndexLowAfterIntersect];
+        double deltaFpDiff = deltaFp[intersection->lineHighBeforeIntersect] - deltaFp[intersection->lineLowBeforeIntersect];
+        double deltaFnDiff = deltaFn[intersection->lineHighBeforeIntersect] - deltaFn[intersection->lineLowBeforeIntersect];
 
         // b ∈ {2, . . . , B} is the index of the function which is larger before intersection point
-        int b = intersection->lineHighBeforeIntersect;
+        int b = lineIndexHighAfterIntersect;
         // current step size we're at
         double stepSize = intersection->point.x;
 
@@ -172,32 +172,20 @@ void lineSearch(
                               sortedIndices[lowerLineIndex], intersection->lineHighBeforeIntersect);
         }
 
+        double aumDiff = aumSlope * (stepSize - lastStepSize);
+        aum += aumDiff;
+        stepSizeVec[iterations] = stepSize;
+        aumVec[iterations] = aum;
+
         // update aum slope
         double slopeDiff = lines[intersection->lineHighBeforeIntersect].slope - lines[intersection->lineLowBeforeIntersect].slope;
         // this is the D^(k+1) update rule in the paper
-        aumSlope += (slopeDiff) * (M[b - 1] + M[b + 1] - M[b] - minBeforeIntersection);
-        // this is Z^k + s*D^k in the paper
-        double aum = intercept + stepSize * aumSlope;
-        stepSizeVec[iterations] = stepSize;
-        aumVec[iterations] = aum;
-        cout << "stepSize: " << stepSize
-             << " aum: " << aum
-             << " slopeDiff: " << slopeDiff
-             << " b: " << b
-             << " minBeforeIntersection: " << minBeforeIntersection
-             << " M[b]: " << M[b]
-             << endl;
-
-        cout << "FP: ";
-        for (int i = 0; i < lineCount; i++) { cout << FP[i] << " "; }
-        cout << endl;
-        cout << "FN: ";
-        for (int i = 0; i < lineCount; i++) { cout << FN[i] << " "; }
-        cout << endl;
-        cout << "M: ";
-        for (int i = 0; i < lineCount; i++) { cout << M[i] << " "; }
-        cout << endl;
+        double mAfter = b < lineCount ? M[b + 1] : 0;
+        double previousAumSlope = aumSlope;
+        // for the next iteration
+        aumSlope += (slopeDiff) * (mAfter + M[b - 1] - M[b] - minBeforeIntersection);
 
         intersections.erase(intersection);
+        lastStepSize = stepSize;
     }
 }
