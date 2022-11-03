@@ -3,4 +3,4 @@ project(aum_line_search)
 
 set(CMAKE_CXX_STANDARD 11)
 
-add_executable(aum_line_search main.cpp)
+add_executable(aum_line_search main.cpp aumLineSearch.cpp)
