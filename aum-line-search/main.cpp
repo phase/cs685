@@ -15,11 +15,13 @@ struct Line {
 struct Point {
     double x; // step size
     double y;
-};
 
-bool operator==(Point a, Point b) {
-    return a.x == b.x && a.y == b.y;
-}
+    bool operator==(const Point other) const {
+        // return x == other.x && y == other.y;
+        // TODO double check this is correct
+        return fabs(x - other.x) < 1e-5 && fabs(y - other.y) < 1e-5;
+    }
+};
 
 Point intersect(Line a, Line b) {
     double x = (b.intercept - a.intercept) / (a.slope - b.slope);
@@ -56,22 +58,6 @@ bool compareIntersections(IntersectionData &a, IntersectionData &b) {
     return a < b;
 }
 
-// test function, not used in algorithm below
-vector<IntersectionData> findIntersections(vector<Line> lines) {
-    vector<IntersectionData> intersections;
-    for (int a = 0; a < lines.size(); a++) {
-        for (int b = a + 1; b < lines.size(); b++) {
-            if (a != b) {
-                Point point = intersect(lines[a], lines[b]);
-                IntersectionData data = {point, a, b};
-                intersections.push_back(data);
-            }
-        }
-    }
-    sort(intersections.begin(), intersections.end(), compareIntersections);
-    return intersections;
-}
-
 namespace std {
     // hash implementation for Point used in the multiset below
     template<>
@@ -81,7 +67,6 @@ namespace std {
         }
     };
 }
-
 
 void queueIntersection(
         const Line *lines,
@@ -128,7 +113,9 @@ void lineSearch(
         double *FP,
         double *FN,
         double *M,
-        int maxIterations
+        int maxIterations,
+        double *stepSizeVec,
+        double *aumVec
 ) {
     // a list of indices of lines
     // this is updated as we move across the X axis, passing intersection points changes the indices
@@ -166,6 +153,7 @@ void lineSearch(
         }
     }
 
+    double intercept = 0; // TODO this should be AUM at step size 0
     double aumSlope = 0.0;
     int iterations = 0;
     while (!intersections.empty() && iterations++ < maxIterations) {
@@ -174,14 +162,27 @@ void lineSearch(
              << intersection->lineHighBeforeIntersect << " " << intersection->lineLowBeforeIntersect << endl;
 
         // swap the indices of the lines that make this intersection point
+        // the names of these variables look backwards because they get swapped
         int lineIndexLowAfterIntersect = backwardsIndices[intersection->lineLowBeforeIntersect];
         int lineIndexHighAfterIntersect = backwardsIndices[intersection->lineHighBeforeIntersect];
         swap(backwardsIndices[intersection->lineLowBeforeIntersect], backwardsIndices[intersection->lineHighBeforeIntersect]);
         swap(sortedIndices[lineIndexHighAfterIntersect], sortedIndices[lineIndexLowAfterIntersect]);
 
         // indices of the next lines we want to find intersections for
-        int higherLineIndex = lineIndexHighAfterIntersect - 1;
-        int lowerLineIndex = lineIndexLowAfterIntersect + 1;
+        int higherLineIndex = lineIndexHighAfterIntersect + 1;
+        int lowerLineIndex = lineIndexLowAfterIntersect - 1;
+
+        cout << "sortedIndices = ";
+        for (int i : sortedIndices) {
+            cout << i << " ";
+        }
+        cout << endl;
+
+        cout << "backwardsIndices = ";
+        for (int i : backwardsIndices) {
+            cout << i << " ";
+        }
+        cout << endl;
 
         cout << " 0higherLineIndex: " << higherLineIndex << " (line " << sortedIndices[higherLineIndex] << ")" << endl;
         cout << " 1lineHighAfterIntersect: " << lineIndexHighAfterIntersect << " (line "
@@ -191,71 +192,77 @@ void lineSearch(
         cout << " 3lowerLineIndex: " << lowerLineIndex << " (line " << sortedIndices[lowerLineIndex] << ")" << endl;
 
         // (∆FP of top line) - (∆FP of bottom line)
-        double deltaDeltaFp = deltaFp[sortedIndices[lineIndexLowAfterIntersect]] -
-                              deltaFp[sortedIndices[lineIndexHighAfterIntersect]];
-        double deltaDeltaFn = deltaFn[sortedIndices[lineIndexLowAfterIntersect]] -
-                              deltaFn[sortedIndices[lineIndexHighAfterIntersect]];
+        double deltaFpDiff = deltaFp[lineIndexHighAfterIntersect] - deltaFp[lineIndexLowAfterIntersect];
+        double deltaFnDiff = deltaFn[lineIndexHighAfterIntersect] - deltaFn[lineIndexLowAfterIntersect];
 
         // b ∈ {2, . . . , B} is the index of the function which is larger before intersection point
         int b = intersection->lineHighBeforeIntersect;
+        // current step size we're at
+        double stepSize = intersection->point.x;
 
         // update FP & FN
-        FP[b] += deltaDeltaFp;
-        FN[b] += deltaDeltaFn;
+        FP[b] += deltaFpDiff;
+        FN[b] += deltaFnDiff;
         double minBeforeIntersection = M[b];
         M[b] = min(FP[b], FN[b]);
 
-        // queue these in the multiset
+        checkedIntersections.insert(intersection->point);
+        // queue the next intersections in the multiset
         // this creates an intersection between "lineIndexHighAfterIntersect" and "higherLineIndex"
         // "lineIndexHighAfterIntersect" will now be the index of the low line before this new intersection point
-        if (higherLineIndex >= 0) {
+        if (higherLineIndex < lineCount) {
             queueIntersection(lines, intersections, checkedIntersections,
                               intersection->lineLowBeforeIntersect, sortedIndices[higherLineIndex]);
         }
-        if (lowerLineIndex < lineCount) {
+        if (lowerLineIndex >= 0) {
             queueIntersection(lines, intersections, checkedIntersections,
                               sortedIndices[lowerLineIndex], intersection->lineHighBeforeIntersect);
         }
 
         // update aum slope
         double slopeDiff = lines[intersection->lineHighBeforeIntersect].slope - lines[intersection->lineLowBeforeIntersect].slope;
+        // this is the D^(k+1) update rule in the paper
         aumSlope += (slopeDiff) * (M[b - 1] + M[b + 1] - M[b] - minBeforeIntersection);
+        // this is Z^k + s*D^k in the paper
+        double aum = intercept + stepSize * aumSlope;
+        stepSizeVec[iterations] = stepSize;
+        aumVec[iterations] = aum;
+        cout << "stepSize: " << stepSize
+             << " aum: " << aum
+             << " slopeDiff: " << slopeDiff
+             << " b: " << b
+             << " minBeforeIntersection: " << minBeforeIntersection
+             << " M[b]: " << M[b]
+             << endl;
 
-        checkedIntersections.insert(intersection->point);
+        cout << "FP: ";
+        for (int i = 0; i < lineCount; i++) { cout << FP[i] << " "; }
+        cout << endl;
+        cout << "FN: ";
+        for (int i = 0; i < lineCount; i++) { cout << FN[i] << " "; }
+        cout << endl;
+        cout << "M: ";
+        for (int i = 0; i < lineCount; i++) { cout << M[i] << " "; }
+        cout << endl;
+
         intersections.erase(intersection);
     }
 }
 
-int main0() {
-    Line lines[] = {
-            {0, 3},
-            {0, 2},
-            {0, 1},
-            {1, -1},
-            {1, -2},
-            {1, -3},
-    };
-    double deltaFp[] = {0, 0, 0, 0, 0, 0, 0};
-    double deltaFn[] = {0, 0, 0, 0, 0, 0, 0};
-    double FP[6] = {0};
-    double FN[6] = {0};
-    double M[6] = {0};
-    lineSearch(lines, 6, deltaFp, deltaFn, FP, FN, M, 10);
-    return 0;
-}
-
 int main() {
     Line lines[] = {
-            {1, 0},
-            {2, -1},
             {3, -6},
+            {2, -1},
+            {1, 0},
     };
     double deltaFp[] = {3, -2, 1};
     double deltaFn[] = {2, 2, -1};
     double FP[3] = {0};
     double FN[3] = {0};
     double M[3] = {0};
-    lineSearch(lines, 3, deltaFp, deltaFn, FP, FN, M, 20);
+    double stepSizeVec[12] = {0};
+    double aumVec[12] = {0};
+    lineSearch(lines, 3, deltaFp, deltaFn, FP, FN, M, 20, stepSizeVec, aumVec);
 
     cout << "FP: ";
     for (auto i: FP) { cout << i << " "; }
@@ -268,17 +275,19 @@ int main() {
 
 int main2() {
     Line lines[] = {
-            {-1, 2},
-            {0.5, 1},
+            {3, -5},
             {2, -2},
-            {3, -5}
+            {0.5, 1},
+            {-1, 2},
     };
     double deltaFp[] = {3, -2, 1, 0};
     double deltaFn[] = {2, 2, -1, 0};
     double FP[4] = {0};
     double FN[4] = {0};
     double M[4] = {0};
-    lineSearch(lines, 4, deltaFp, deltaFn, FP, FN, M, 20);
+    double stepSizeVec[12] = {0};
+    double aumVec[12] = {0};
+    lineSearch(lines, 4, deltaFp, deltaFn, FP, FN, M, 20, stepSizeVec, aumVec);
 
     cout << "FP: ";
     for (auto i: FP) { cout << i << " "; }
