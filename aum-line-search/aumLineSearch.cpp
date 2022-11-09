@@ -8,11 +8,12 @@ bool Point::operator==(const Point other) const {
     return fabs(x - other.x) < 1e-5 && fabs(y - other.y) < 1e-5;
 }
 
-bool Point::isFinite() {
+bool Point::isFinite() const {
     return isfinite(x) && isfinite(y);
 }
 
 Point intersect(Line a, Line b) {
+    if (a.slope == b.slope) return Point{INFINITY, INFINITY};
     double x = (b.intercept - a.intercept) / (a.slope - b.slope);
     double y = a.intercept + a.slope * x;
     return Point{x, y};
@@ -52,8 +53,6 @@ void queueIntersection(
             return;
         }
 
-        //cout << "queueing intersection point " << intersection.point.x << " " << intersection.point.y << " "
-        //     << intersection.lineHighBeforeIntersect << " " << intersection.lineLowBeforeIntersect << endl;
         intersections.insert(intersection);
     }
 }
@@ -110,6 +109,7 @@ void lineSearch(
     // AUM at step size 0
     double intercept = initialAum;
     aumVec[0] = intercept;
+    stepSizeVec[0] = 0.0;
     double aumSlope = 0.0;
     double lastStepSize = 0.0;
 
@@ -127,17 +127,13 @@ void lineSearch(
     }
     double aum = initialAum;
 
-    int iterations = 0;
-    while (!intersections.empty() && iterations++ < maxIterations) {
-        auto intersection = intersections.begin();
-        cout << "using intersection point " << intersection->point.x << " " << intersection->point.y << " "
-             << intersection->lineHighBeforeIntersect << " " << intersection->lineLowBeforeIntersect << endl;
-
+    for (int iterations = 1; iterations < maxIterations && !intersections.empty(); iterations++) {
+        auto intersection = *intersections.begin();
         // swap the indices of the lines that make this intersection point
         // the names of these variables look backwards because they get swapped
-        int lineIndexLowAfterIntersect = backwardsIndices[intersection->lineLowBeforeIntersect];
-        int lineIndexHighAfterIntersect = backwardsIndices[intersection->lineHighBeforeIntersect];
-        swap(backwardsIndices[intersection->lineLowBeforeIntersect], backwardsIndices[intersection->lineHighBeforeIntersect]);
+        int lineIndexLowAfterIntersect = backwardsIndices[intersection.lineLowBeforeIntersect];
+        int lineIndexHighAfterIntersect = backwardsIndices[intersection.lineHighBeforeIntersect];
+        swap(backwardsIndices[intersection.lineLowBeforeIntersect], backwardsIndices[intersection.lineHighBeforeIntersect]);
         swap(sortedIndices[lineIndexHighAfterIntersect], sortedIndices[lineIndexLowAfterIntersect]);
 
         // indices of the next lines we want to find intersections for
@@ -145,13 +141,13 @@ void lineSearch(
         int lowerLineIndex = lineIndexLowAfterIntersect - 1;
 
         // (∆FP of top line) - (∆FP of bottom line)
-        double deltaFpDiff = deltaFp[intersection->lineHighBeforeIntersect] - deltaFp[intersection->lineLowBeforeIntersect];
-        double deltaFnDiff = deltaFn[intersection->lineHighBeforeIntersect] - deltaFn[intersection->lineLowBeforeIntersect];
+        double deltaFpDiff = deltaFp[intersection.lineHighBeforeIntersect] - deltaFp[intersection.lineLowBeforeIntersect];
+        double deltaFnDiff = deltaFn[intersection.lineHighBeforeIntersect] - deltaFn[intersection.lineLowBeforeIntersect];
 
         // b ∈ {2, . . . , B} is the index of the function which is larger before intersection point
         int b = lineIndexHighAfterIntersect;
         // current step size we're at
-        double stepSize = intersection->point.x;
+        double stepSize = intersection.point.x;
 
         // update FP & FN
         FP[b] += deltaFpDiff;
@@ -159,30 +155,32 @@ void lineSearch(
         double minBeforeIntersection = M[b];
         M[b] = min(FP[b], FN[b]);
 
-        checkedIntersections.insert(intersection->point);
+        checkedIntersections.insert(intersection.point);
         // queue the next intersections in the multiset
         // this creates an intersection between "lineIndexHighAfterIntersect" and "higherLineIndex"
         // "lineIndexHighAfterIntersect" will now be the index of the low line before this new intersection point
         if (higherLineIndex < lineCount) {
             queueIntersection(lines, intersections, checkedIntersections,
-                              intersection->lineLowBeforeIntersect, sortedIndices[higherLineIndex]);
+                              intersection.lineLowBeforeIntersect, sortedIndices[higherLineIndex]);
         }
         if (lowerLineIndex >= 0) {
             queueIntersection(lines, intersections, checkedIntersections,
-                              sortedIndices[lowerLineIndex], intersection->lineHighBeforeIntersect);
+                              sortedIndices[lowerLineIndex], intersection.lineHighBeforeIntersect);
         }
 
         double aumDiff = aumSlope * (stepSize - lastStepSize);
         aum += aumDiff;
-        stepSizeVec[iterations] = stepSize;
-        aumVec[iterations] = aum;
+
+        if (isfinite(aum)) {
+            stepSizeVec[iterations] = stepSize;
+            aumVec[iterations] = aum;
+        }
 
         // update aum slope
-        double slopeDiff = lines[intersection->lineHighBeforeIntersect].slope - lines[intersection->lineLowBeforeIntersect].slope;
-        // this is the D^(k+1) update rule in the paper
+        double slopeDiff = lines[intersection.lineHighBeforeIntersect].slope - lines[intersection.lineLowBeforeIntersect].slope;
+        // this is the D^(k+1) update rule in the paper,
+        // it updates the AUM slope for the next iteration
         double mAfter = b < lineCount ? M[b + 1] : 0;
-        double previousAumSlope = aumSlope;
-        // for the next iteration
         aumSlope += (slopeDiff) * (mAfter + M[b - 1] - M[b] - minBeforeIntersection);
 
         intersections.erase(intersection);

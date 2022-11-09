@@ -18,7 +18,7 @@ struct Point {
 
     bool operator==(Point other) const;
 
-    bool isFinite();
+    bool isFinite() const;
 };
 
 Point intersect(Line a, Line b);
